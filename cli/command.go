@@ -51,7 +51,7 @@ type RemoveCmd struct {
 }
 
 func (r RemoveCmd) JSON(w io.Writer) error {
-	r.Action = "add"
+	r.Action = "remove"
 	return json.NewEncoder(w).Encode(r)
 }
 
