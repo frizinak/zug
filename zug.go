@@ -63,7 +63,7 @@ func (z *Zug) Layer(name string) *Layer {
 		return l
 	}
 
-	l := &Layer{m: z.m, id: name, AddCmd: cli.Add(name, "", 0, 0)}
+	l := &Layer{m: z.m, AddCmd: cli.Add(name, "", 0, 0)}
 	z.layers[name] = l
 	z.order = append(z.order, name)
 	z.draw = true
@@ -102,9 +102,18 @@ func (z *Zug) Render() error {
 
 	for _, ln := range z.order {
 		l := z.layers[ln]
-		if l.Path == "" {
+		if l.Path == "" || l.hide {
+			if l.shown {
+				l.shown = false
+				if err := z.cli.Command(cli.Remove(l.ID)); err != nil {
+					return err
+				}
+			}
+
 			continue
 		}
+
+		l.shown = true
 		if err := z.cli.Command(l.AddCmd); err != nil {
 			return err
 		}
@@ -117,9 +126,20 @@ type Layer struct {
 	m *img.Manager
 	cli.AddCmd
 
-	id    string
 	mtime time.Time
 	draw  bool
+	hide  bool
+	shown bool
+}
+
+func (l *Layer) Show() { l.setHidden(false) }
+func (l *Layer) Hide() { l.setHidden(true) }
+
+func (l *Layer) setHidden(v bool) {
+	if l.hide != v {
+		l.hide = v
+		l.draw = true
+	}
 }
 
 func (l *Layer) SetSource(uri string) error {
