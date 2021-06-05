@@ -79,11 +79,11 @@ func (u *Agent) init() error {
 		for {
 			v := Output{}
 			if err := dec.Decode(&v); err != nil {
-				if err == io.EOF {
-					break
+				if err != io.EOF {
+					u.c.OnError(err)
+					u.Close()
 				}
-				u.c.OnError(err)
-				continue
+				break
 			}
 			if err := v.Err(); err != nil {
 				u.c.OnError(err)
