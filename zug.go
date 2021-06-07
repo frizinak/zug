@@ -3,9 +3,16 @@ package zug
 import (
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"strings"
 	"time"
+
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/webp"
 
 	"github.com/frizinak/zug/cli"
 	"github.com/frizinak/zug/img"
@@ -123,13 +130,19 @@ func (z *Zug) Render() error {
 }
 
 type Layer struct {
-	m *img.Manager
 	cli.AddCmd
+
+	m *img.Manager
 
 	mtime time.Time
 	draw  bool
 	hide  bool
 	shown bool
+
+	state struct {
+		path string
+		dims image.Point
+	}
 }
 
 func (l *Layer) Show() { l.setHidden(false) }
@@ -150,6 +163,69 @@ func (l *Layer) SetSource(uri string) error {
 	l.Path = path
 
 	return nil
+}
+
+// Dimensions returns the original image dimension in pixels
+func (l *Layer) Dimensions() (image.Point, error) {
+	var i image.Point
+	if l.Path == "" {
+		return i, nil
+	}
+
+	if l.state.path == l.Path {
+		return l.state.dims, nil
+	}
+
+	r, err := os.Open(l.Path)
+	if err != nil {
+		return i, err
+	}
+	defer r.Close()
+
+	dim, _, err := image.DecodeConfig(r)
+	i.X = dim.Width
+	i.Y = dim.Height
+
+	l.state.path = l.Path
+	l.state.dims = i
+
+	return i, err
+}
+
+// Geometry returns the position and size of the layer in pixels after scaling
+func (l *Layer) GeometryPx(charSize image.Point) (image.Rectangle, error) {
+	var i image.Rectangle
+	scale, ok := scalers[l.Scaler]
+	if !ok {
+		return i, fmt.Errorf("invalid scaler '%s'", l.Scaler)
+	}
+
+	dim, err := l.Dimensions()
+	if err != nil {
+		return i, err
+	}
+
+	i.Min.X, i.Min.Y = l.X*charSize.X, l.Y*charSize.Y
+	w, h := dim.X/charSize.X, dim.Y/charSize.Y
+	rw, rh := scale(w, h, l.Width, l.Height)
+	i.Max.X, i.Max.Y = i.Min.X+rw*charSize.X, i.Min.Y+rh*charSize.Y
+
+	return i, nil
+}
+
+// Geometry returns the position and size of the layer in characters after scaling
+func (l *Layer) Geometry(charSize image.Point) (image.Rectangle, error) {
+	i, err := l.GeometryPx(charSize)
+	if err != nil {
+		return i, err
+	}
+
+	i.Min.X /= charSize.X
+	i.Max.X /= charSize.X
+	i.Min.Y /= charSize.Y
+	i.Max.Y /= charSize.Y
+
+	return i, err
 }
 
 func (l *Layer) QueueDraw() { l.draw = true }
