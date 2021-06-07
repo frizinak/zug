@@ -189,8 +189,8 @@ func (a *app) size(force bool) bool {
 
 	a.layer.X = (term.X - rw) / 2
 	const space = 2
-	if rh > space {
-		rh -= space
+	if rh > 2*space {
+		rh -= 2 * space
 		a.layer.Y = space
 	}
 	a.layer.Width, a.layer.Height = rw, rh
@@ -223,7 +223,8 @@ func (a *app) size(force bool) bool {
 	}
 
 	if a.layer.Y > term.Y-rh {
-		a.layer.Y -= a.emptyLines
+		a.layer.Y = term.Y - a.emptyLines
+		ch = true
 	}
 	if a.layer.Y < space {
 		a.layer.Y = space
