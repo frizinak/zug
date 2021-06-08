@@ -10,14 +10,15 @@
 
 ## Todo
 
+- [ ] Drop ueberzug, implement our own X11 windows using xcb (see ueberdiy branch for progress)
 - [ ] Animated gifs
 - [ ] Perhaps a sprite based game engine for laughs
 
 ## Why
 
-- [ ] Implement inline image previews in github.com/frizinak/homechat
+- [X] Implement inline image previews in github.com/frizinak/homechat
 - [ ] Replace opengl viewer in github.com/frizinak/photos
-- [ ] Replace imv/feh perhaps in my own workflow
+- [X] Replace imv/feh perhaps in my own workflow
 
 # Thx
 
