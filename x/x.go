@@ -7,14 +7,25 @@ import (
 	"image"
 	"os"
 	"strconv"
+	"sync"
 
+	"github.com/containerd/console"
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
 )
 
 type TermWindow struct {
+	sem sync.RWMutex
+
 	x   *xgb.Conn
-	wnd uint32
+	wnd xproto.Window
+
+	console console.Console
+
+	windows map[string]*SubWindow
+
+	depth  xproto.DepthInfo
+	visual xproto.VisualInfo
 }
 
 func NewFromEnv() (*TermWindow, error) { return New(os.Getenv("WINDOWID")) }
@@ -30,7 +41,25 @@ func New(windowID string) (*TermWindow, error) {
 		return nil, fmt.Errorf("'%s' is no a valid X window id", windowID)
 	}
 
-	return &TermWindow{x: x, wnd: uint32(wnd)}, nil
+	return &TermWindow{
+		x:       x,
+		wnd:     xproto.Window(wnd),
+		windows: make(map[string]*SubWindow),
+	}, nil
+}
+
+func (t *TermWindow) Close() {
+	t.DelAllWindows()
+	t.x.Close()
+}
+
+func (t *TermWindow) Console() console.Console {
+	if t.console != nil {
+		return t.console
+	}
+
+	t.console = console.Current()
+	return t.console
 }
 
 func (t *TermWindow) Geometry() (image.Rectangle, error) {
@@ -46,14 +75,18 @@ func (t *TermWindow) Geometry() (image.Rectangle, error) {
 	return i, nil
 }
 
-// CharSize returns the size of a single character in pixels
-// columns and lines are only used in the fallback calculation and can
-// be zero to skip this fallback and return an error.
-func (t *TermWindow) CharSize(columns, lines int) (image.Point, error) {
+// CharSize returns the size of a single character in pixels.
+func (t *TermWindow) CharSize() (Dimensions, error) {
 	p, err := t.resizeIncrement()
 	if err == nil {
 		return p, nil
 	}
+
+	size, err := t.Console().Size()
+	if err != nil {
+		return p, err
+	}
+	columns, lines := int(size.Width), int(size.Height)
 
 	if columns == 0 || lines == 0 {
 		return p, err
@@ -64,13 +97,13 @@ func (t *TermWindow) CharSize(columns, lines int) (image.Point, error) {
 		return p, err
 	}
 
-	p.X = geom.Dx() / columns
-	p.Y = geom.Dy() / lines
+	p.W = geom.Dx() / columns
+	p.H = geom.Dy() / lines
 	return p, nil
 }
 
-func (t *TermWindow) resizeIncrement() (image.Point, error) {
-	i := image.Point{}
+func (t *TermWindow) resizeIncrement() (Dimensions, error) {
+	i := Dimensions{}
 
 	aname := "WM_NORMAL_HINTS"
 	activeAtom, err := xproto.InternAtom(
@@ -86,7 +119,7 @@ func (t *TermWindow) resizeIncrement() (image.Point, error) {
 	reply, err := xproto.GetProperty(
 		t.x,
 		false,
-		xproto.Window(t.wnd),
+		t.wnd,
 		activeAtom.Atom,
 		xproto.GetPropertyTypeAny, 0, (1<<32)-1,
 	).Reply()
@@ -114,9 +147,9 @@ func (t *TermWindow) resizeIncrement() (image.Point, error) {
 		return i, errors.New("no resize increment in reply")
 	}
 
-	i.X = vals[9]
-	i.Y = vals[10]
-	if i.X <= 0 || i.Y <= 0 {
+	i.W = vals[9]
+	i.H = vals[10]
+	if i.W <= 0 || i.H <= 0 {
 		return i, errors.New("no valid resize increment set")
 	}
 

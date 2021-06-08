@@ -1,16 +1,14 @@
 #  Zug
 
+An X11 terminal image viewer like ueberzug.
+
 - high level lib:   go get github.com/frizinak/zug
-- lowish level lib: go get github.com/frizinak/zug/cli
+- lowish level lib: go get github.com/frizinak/zug/x
 - an image viewer : go get github.com/frizinak/zug/cmd/zug
-
-## Requirements
-
-[seebye/ueberzug](https://github.com/seebye/ueberzug)
 
 ## Todo
 
-- [ ] Drop ueberzug, implement our own X11 windows using xcb (see ueberdiy branch for progress)
+- [X] Drop ueberzug, implement our own X11 windows using xcb (see ueberdiy branch for progress)
 - [ ] Animated gifs
 - [ ] Perhaps a sprite based game engine for laughs
 
@@ -20,6 +18,9 @@
 - [ ] Replace opengl viewer in github.com/frizinak/photos
 - [X] Replace imv/feh perhaps in my own workflow
 
+
 # Thx
 
-[seebye/ueberzug](https://github.com/seebye/ueberzug)
+- [{BurntSushi,jezek}/xgb](https://github.com/jezek/xgb/)
+- [seebye/ueberzug](https://github.com/seebye/ueberzug)
+

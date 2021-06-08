@@ -54,7 +54,7 @@ func (m *Manager) Do(uri string) (string, error) {
 
 	if m.first {
 		m.first = false
-		os.MkdirAll(m.dir, 0700)
+		_ = os.MkdirAll(m.dir, 0700)
 	}
 
 	for _, h := range handlers {
