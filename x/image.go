@@ -3,62 +3,102 @@ package x
 import (
 	"image"
 	"image/color"
-	"image/draw"
 	"io"
 
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/jezek/xgb/xproto"
 	_ "golang.org/x/image/bmp"
+	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
-const maxuint16 = 1<<16 - 1
-
-func (t *TermWindow) putImage(
-	img *BGRA,
-	pixMap xproto.Drawable,
-	gc xproto.Gcontext,
-	depth byte,
-) {
-	b := img.Bounds()
-	width, height := b.Dx(), b.Dy()
-	s := width * 4
-	lines := maxuint16 / width
-	for y := 0; y < height; y += lines {
-		from, till := y*s, (y+lines)*s
-		if y+lines > height {
-			till = len(img.Pix)
-			lines = height - y
-		}
-		xproto.PutImage(
-			t.x,
-			xproto.ImageFormatZPixmap,
-			pixMap,
-			gc,
-			uint16(width),
-			uint16(lines),
-			0, int16(y),
-			0, depth,
-			img.Pix[from:till],
-		)
-	}
+type Image interface {
+	Bounds() image.Rectangle
+	Resize(w int, h int)
+	BGRA() *BGRA
 }
 
-func ImageRead(r io.Reader) (*BGRA, error) {
+type nativeImage struct {
+	in  *BGRA
+	out *BGRA
+}
+
+func ImageRead(r io.Reader) (Image, error) {
 	_img, _, err := image.Decode(r)
 	if err != nil {
 		return nil, err
 	}
-	return ImageToBGRA(_img), nil
+
+	return &nativeImage{in: ImageToBGRA(_img)}, nil
+}
+
+func (v *nativeImage) Bounds() image.Rectangle { return v.in.Bounds() }
+
+func (n *nativeImage) Resize(w, h int) {
+	n.out = NewBGRA(image.Rect(0, 0, w, h))
+	draw.NearestNeighbor.Scale(
+		n.out,
+		n.out.Bounds(),
+		n.in,
+		n.in.Bounds(),
+		draw.Src,
+		nil,
+	)
+}
+
+func (n *nativeImage) BGRA() *BGRA {
+	if n.out == nil {
+		return n.in
+	}
+	return n.out
+}
+
+func floatMinMax(v, min, max float32) float32 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 func ImageToBGRA(i image.Image) *BGRA {
 	b := i.Bounds()
 	img := NewBGRA(b)
-	draw.Draw(img, b, i, image.Point{}, draw.Over)
+
+	// Fast path
+	switch v := i.(type) {
+	case *image.RGBA:
+		RGBACopy(img, v, b)
+		return img
+	case *image.NRGBA:
+		NRGBACopy(img, v, b)
+		return img
+
+	case *image.RGBA64:
+		RGBA64Copy(img, v, b)
+		return img
+	case *image.NRGBA64:
+		NRGBA64Copy(img, v, b)
+		return img
+
+	case *image.Gray:
+		GrayCopy(img, v, b)
+		return img
+	case *image.Gray16:
+		Gray16Copy(img, v, b)
+		return img
+
+	case *image.YCbCr:
+		YCbCrCopy(img, v, b)
+		return img
+	}
+
+	// Slow path
+	draw.Draw(img, b, i, image.Point{}, draw.Src)
 	return img
 }
 

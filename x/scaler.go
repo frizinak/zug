@@ -49,3 +49,12 @@ var scalers = map[ScaleMethod]Scaler{
 	ScaleRatio:        ScalerContain(false),
 	ScaleRatioUpscale: ScalerContain(true),
 }
+
+var last = ScaleRatioUpscale
+
+func RegisterScaler(s Scaler) ScaleMethod {
+	n := last + 1
+	scalers[n] = s
+	last = n
+	return n
+}

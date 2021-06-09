@@ -14,7 +14,6 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/frizinak/zug"
-	"github.com/frizinak/zug/cli"
 	"github.com/frizinak/zug/img"
 	"github.com/frizinak/zug/x"
 )
@@ -38,7 +37,6 @@ type app struct {
 	c     console.Console
 	layer *zug.Layer
 	stdin *bufio.Reader
-	x     *x.TermWindow
 
 	args []string
 	ix   int
@@ -61,11 +59,9 @@ const (
 )
 
 func new(z *zug.Zug, c console.Console, args []string) *app {
-	x, _ := x.NewFromEnv()
 	a := &app{
 		z:     z,
 		c:     c,
-		x:     x,
 		layer: z.Layer("m"),
 		stdin: bufio.NewReader(os.Stdin),
 		args:  args,
@@ -78,8 +74,6 @@ func new(z *zug.Zug, c console.Console, args []string) *app {
 
 	a.show()
 	a.tick <- true
-	a.layer.Draw = true
-	a.layer.SynchronouslyDraw = true
 
 	return a
 }
@@ -96,7 +90,6 @@ func (a *app) delta(d int) bool {
 	}
 	if ix != a.ix {
 		a.ix = ix
-		a.show()
 		return true
 	}
 
@@ -160,7 +153,8 @@ func (a *app) input() {
 func (a *app) reqCursor() { os.Stdout.Write(csiCursor) }
 
 func (a *app) show() {
-	err := a.layer.SetSource(a.args[a.ix])
+	ix := a.ix
+	err := a.layer.SetSource(a.args[ix])
 	perr(err)
 }
 
@@ -178,6 +172,14 @@ func (a *app) termSize() (bool, image.Point) {
 	return c, pt
 }
 
+type dims struct {
+	X, Y, W, H int
+}
+
+func (d dims) Rect() image.Rectangle {
+	return image.Rect(d.X, d.Y, d.X+d.W, d.Y+d.H)
+}
+
 func (a *app) size(force bool) bool {
 	ch, term := a.termSize()
 	if !ch && !force {
@@ -187,30 +189,24 @@ func (a *app) size(force bool) bool {
 	rw := term.X - 2
 	rh := term.Y
 
-	a.layer.X = (term.X - rw) / 2
+	dims := dims{}
+	dims.X = (term.X - rw) / 2
 	const space = 2
 	if rh > 2*space {
 		rh -= 2 * space
-		a.layer.Y = space
+		dims.Y = space
 	}
-	a.layer.Width, a.layer.Height = rw, rh
+	dims.W, dims.H = rw, rh
 
-	var chr image.Point
-	if a.x != nil {
-		if c, err := a.x.CharSize(term.X, term.Y); err == nil {
-			chr = c
-		}
-
-		dims, err := a.layer.Geometry(chr)
-		if err == nil {
-			a.layer.Y = term.Y - dims.Dy()
-			rh = dims.Dy()
-		}
+	geomTerm, err := a.layer.DryScaleTerminal(dims.W, dims.H, a.layer.Scaler())
+	if err == nil {
+		dims.Y = term.Y - geomTerm.Window.H
+		rh = geomTerm.Window.H
 	}
 
 	lines := rh - a.emptyLines
 	if a.cursorY != -1 {
-		a.layer.Y = a.cursorY
+		dims.Y = a.cursorY
 	}
 
 	if lines > 0 {
@@ -222,13 +218,17 @@ func (a *app) size(force bool) bool {
 		a.emptyLines += lines
 	}
 
-	if a.layer.Y > term.Y-rh {
-		a.layer.Y = term.Y - a.emptyLines
+	if dims.Y > term.Y-rh {
+		dims.Y = term.Y - a.emptyLines
 		ch = true
 	}
-	if a.layer.Y < space {
-		a.layer.Y = space
+	if dims.Y < space {
+		dims.Y = space
 	}
+
+	_ = a.layer.SetGeometryTerminal(dims.Rect())
+	a.layer.Show()
+	a.layer.Render()
 
 	if ch {
 		a.reqCursor()
@@ -259,53 +259,55 @@ func (a *app) Run() error {
 	go func() {
 		for {
 			a.tick <- false
-			time.Sleep(time.Millisecond * 200)
+			time.Sleep(time.Millisecond * 50)
 		}
 	}()
 
+	update := false
+	tick := false
 	for {
 		select {
 		case err := <-a.quit:
 			return err
 		case upd := <-a.tick:
-			if err := a.run(upd); err != nil {
+			tick = true
+			update = upd || update
+		case <-time.After(time.Millisecond * 10):
+			if !tick {
+				continue
+			}
+			if update {
+				a.show()
+			}
+			if err := a.run(update); err != nil {
 				return err
 			}
+			tick = false
+			update = false
 		}
 	}
 }
 
 func (a *app) run(redraw bool) error {
-	redraw = a.size(redraw) || redraw
-	if redraw {
-		a.layer.QueueDraw()
-	}
-
+	a.size(redraw)
 	return a.z.Render()
 }
 
 func main() {
-	var ueberzug string
-	flag.StringVar(&ueberzug, "b", "", "ueberzug binary")
 	flag.Parse()
-
 	args := flag.Args()
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "no files given")
 		return
 	}
 
-	uzug := cli.New(cli.Config{
-		UeberzugBinary: ueberzug,
-		OnError:        perr,
-	})
-
-	if err := uzug.Init(); err != nil {
+	x, err := x.NewFromEnv()
+	if err != nil {
 		perr(err)
 		os.Exit(1)
 	}
 
-	z := zug.New(img.DefaultManager, uzug)
+	z := zug.New(img.DefaultManager, x)
 	term := console.Current()
 	app := new(z, term, args)
 
@@ -313,7 +315,7 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	done := func() {
 		app.Close()
-		term.Reset()
+		_ = term.Reset()
 		os.Exit(0)
 	}
 	go func() {
