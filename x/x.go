@@ -20,7 +20,8 @@ type TermWindow struct {
 	x   *xgb.Conn
 	wnd xproto.Window
 
-	console console.Console
+	console   console.Console
+	hintsAtom xproto.Atom
 
 	windows map[string]*SubWindow
 
@@ -105,22 +106,25 @@ func (t *TermWindow) CharSize() (Dimensions, error) {
 func (t *TermWindow) resizeIncrement() (Dimensions, error) {
 	i := Dimensions{}
 
-	aname := "WM_NORMAL_HINTS"
-	activeAtom, err := xproto.InternAtom(
-		t.x,
-		true,
-		uint16(len(aname)),
-		aname,
-	).Reply()
-	if err != nil {
-		return i, err
+	if t.hintsAtom == 0 {
+		aname := "WM_NORMAL_HINTS"
+		atom, err := xproto.InternAtom(
+			t.x,
+			true,
+			uint16(len(aname)),
+			aname,
+		).Reply()
+		if err != nil {
+			return i, err
+		}
+		t.hintsAtom = atom.Atom
 	}
 
 	reply, err := xproto.GetProperty(
 		t.x,
 		false,
 		t.wnd,
-		activeAtom.Atom,
+		t.hintsAtom,
 		xproto.GetPropertyTypeAny, 0, (1<<32)-1,
 	).Reply()
 	if err != nil {
