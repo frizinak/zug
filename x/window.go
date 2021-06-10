@@ -123,6 +123,7 @@ type SubWindow struct {
 	pixmap xproto.Pixmap
 	gc     xproto.Gcontext
 	scaler ScaleMethod
+
 	change bool
 }
 
@@ -134,6 +135,7 @@ func (w *SubWindow) Close() {
 	w.sem.Lock()
 	if w.is(stateCreated) {
 		xproto.DestroyWindow(w.t.x, w.wnd)
+		w.wnd = 0
 	}
 	if w.pixmap != 0 {
 		xproto.FreePixmap(w.t.x, w.pixmap)
@@ -303,6 +305,7 @@ func (w *SubWindow) windowID(new bool) {
 			return
 		}
 		xproto.DestroyWindow(w.t.x, w.wnd)
+		w.wnd = 0
 	}
 
 	w.state &= ^stateCreated
@@ -345,23 +348,37 @@ func (w *SubWindow) geometry() (bool, Geometry) {
 
 func (w *SubWindow) drawImage() {
 	change, geom := w.geometry()
-	if geom.Window.W == 0 || geom.Window.H == 0 ||
-		geom.Image.W == 0 || geom.Image.H == 0 {
-		return
+	renderable := geom.Window.W != 0 && geom.Window.H != 0 &&
+		geom.Image.W != 0 && geom.Image.H != 0
+
+	actualChange := w.img == nil
+	if renderable && !actualChange {
+		b := w.img.Rect
+		actualChange = b.Dx() != geom.Image.W || b.Dy() != geom.Image.H
 	}
 
-	if change {
-		w.src.Resize(geom.Image.W, geom.Image.H)
-	}
-	if change || w.img == nil {
+	if renderable && actualChange {
+		if change {
+			w.src.Resize(geom.Image.W, geom.Image.H)
+		}
 		w.img = w.src.BGRA()
 	}
 
 	if w.is(stateCreated) {
 		xproto.DestroyWindow(w.t.x, w.wnd)
-		xproto.FreePixmap(w.t.x, w.pixmap)
-		xproto.FreeGC(w.t.x, w.gc)
+		w.wnd = 0
+		if actualChange {
+			xproto.FreePixmap(w.t.x, w.pixmap)
+			xproto.FreeGC(w.t.x, w.gc)
+			w.pixmap, w.gc = 0, 0
+		}
+		w.state &= ^stateCreated
 	}
+
+	if !renderable {
+		return
+	}
+
 	w.windowID(false)
 	xproto.CreateWindow(
 		w.t.x,
@@ -380,29 +397,30 @@ func (w *SubWindow) drawImage() {
 	)
 	w.state |= stateCreated
 
-	width, height := uint16(w.img.Rect.Dx()), uint16(w.img.Rect.Dy())
-	pixmap, _ := xproto.NewPixmapId(w.t.x)
-	gc, _ := xproto.NewGcontextId(w.t.x)
+	if actualChange || w.pixmap == 0 || w.gc == 0 {
+		width, height := uint16(w.img.Rect.Dx()), uint16(w.img.Rect.Dy())
+		pixmap, _ := xproto.NewPixmapId(w.t.x)
+		gc, _ := xproto.NewGcontextId(w.t.x)
 
-	w.pixmap = pixmap
-	w.gc = gc
+		w.pixmap = pixmap
+		w.gc = gc
+		xproto.CreatePixmap(
+			w.t.x,
+			w.t.depth.Depth,
+			w.pixmap,
+			xproto.Drawable(w.wnd),
+			width,
+			height,
+		)
 
-	xproto.CreatePixmap(
-		w.t.x,
-		w.t.depth.Depth,
-		w.pixmap,
-		xproto.Drawable(w.wnd),
-		width,
-		height,
-	)
-
-	xproto.CreateGC(w.t.x, w.gc, xproto.Drawable(w.pixmap), 0, nil)
-	w.t.putImage(
-		w.img,
-		xproto.Drawable(w.pixmap),
-		w.gc,
-		w.t.depth.Depth,
-	)
+		xproto.CreateGC(w.t.x, w.gc, xproto.Drawable(w.pixmap), 0, nil)
+		w.t.putImage(
+			w.img,
+			xproto.Drawable(w.pixmap),
+			w.gc,
+			w.t.depth.Depth,
+		)
+	}
 
 	if w.is(stateMapped) {
 		xproto.MapWindow(w.t.x, w.wnd)
@@ -422,6 +440,9 @@ func (w *SubWindow) draw() {
 	if w.change || !w.is(stateCreated) {
 		w.change = false
 		w.drawImage()
+	}
+	if w.pixmap == 0 {
+		return
 	}
 
 	xproto.CopyArea(
@@ -453,14 +474,14 @@ func (t *TermWindow) putImage(
 	}
 
 	s := width * 4
-	lines := maxuint16 / width
+	lines := maxuint16 / s
 	for y := 0; y < height; y += lines {
 		from, till := y*s, (y+lines)*s
 		if y+lines > height {
 			till = len(img.Pix)
 			lines = height - y
 		}
-		xproto.PutImage(
+		xproto.PutImageChecked(
 			t.x,
 			xproto.ImageFormatZPixmap,
 			pixMap,
