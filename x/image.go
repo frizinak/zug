@@ -38,7 +38,7 @@ func (v *nativeImage) Bounds() image.Rectangle { return v.in.Bounds() }
 
 func (n *nativeImage) Resize(w, h int) {
 	n.out = NewBGRA(image.Rect(0, 0, w, h))
-	draw.NearestNeighbor.Scale(
+	draw.ApproxBiLinear.Scale(
 		n.out,
 		n.out.Bounds(),
 		n.in,
