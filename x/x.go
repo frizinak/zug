@@ -153,7 +153,7 @@ func (t *TermWindow) resizeIncrement() (Dimensions, error) {
 
 	i.W = vals[9]
 	i.H = vals[10]
-	if i.W <= 0 || i.H <= 0 {
+	if i.W <= 1 || i.H <= 1 {
 		return i, errors.New("no valid resize increment set")
 	}
 
