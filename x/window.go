@@ -125,14 +125,18 @@ type SubWindow struct {
 	scaler ScaleMethod
 
 	change bool
+	closed bool
 }
+
+func (w *SubWindow) Closed() bool { return w.closed }
 
 // Closes frees resources on the x server and this subwindow must not be
 // used anymore.
 func (w *SubWindow) Close() {
+	w.sem.Lock()
+	w.closed = true
 	w.src = nil
 
-	w.sem.Lock()
 	if w.is(stateCreated) {
 		xproto.DestroyWindow(w.t.x, w.wnd)
 		w.wnd = 0
@@ -196,6 +200,9 @@ func (w *SubWindow) ToTop() {
 func (w *SubWindow) Render() {
 	w.sem.Lock()
 	defer w.sem.Unlock()
+	if w.closed {
+		return
+	}
 	if !w.is(stateMapped) {
 		return
 	}

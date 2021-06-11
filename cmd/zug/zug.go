@@ -290,7 +290,7 @@ func (a *app) Run() error {
 
 func (a *app) run(redraw bool) error {
 	a.size(redraw)
-	return a.z.Render()
+	return a.z.RenderWithRefresh()
 }
 
 func main() {
