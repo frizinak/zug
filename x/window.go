@@ -365,6 +365,7 @@ func (w *SubWindow) drawImage() {
 	}
 
 	if renderable && actualChange {
+		w.src.Reset()
 		if change {
 			w.src.Resize(geom.Image.W, geom.Image.H)
 		}

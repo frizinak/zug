@@ -16,6 +16,7 @@ import (
 
 type Image interface {
 	Bounds() image.Rectangle
+	Reset()
 	Resize(w int, h int)
 	BGRA() *BGRA
 }
@@ -35,6 +36,10 @@ func ImageRead(r io.Reader) (Image, error) {
 }
 
 func (v *nativeImage) Bounds() image.Rectangle { return v.in.Bounds() }
+
+func (n *nativeImage) Reset() {
+	n.out = n.in
+}
 
 func (n *nativeImage) Resize(w, h int) {
 	n.out = NewBGRA(image.Rect(0, 0, w, h))
