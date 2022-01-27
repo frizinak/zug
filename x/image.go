@@ -32,7 +32,11 @@ func ImageRead(r io.Reader) (Image, error) {
 		return nil, err
 	}
 
-	return &nativeImage{in: ImageToBGRA(_img)}, nil
+	return NewImage(_img), nil
+}
+
+func NewImage(i image.Image) Image {
+	return &nativeImage{in: ImageToBGRA(i)}
 }
 
 func (v *nativeImage) Bounds() image.Rectangle { return v.in.Bounds() }
